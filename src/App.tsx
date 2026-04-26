@@ -4,7 +4,38 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { compressNDC_AB, decompressNDC, deflateEnc, sha256, fmt } from "./lib/ndc_core";
 
-function hex(b: Uint8Array) { return [...b].map(x => x.toString(16).padStart(2,"0")).join("") }
+// ── history helpers ────────────────────────────────────────────
+const HIST_KEY = "ndc_history";
+type HistEntry = { ndcSize: number; zlibSize: number; origSize: number; ts: number };
+type History = Record<string, HistEntry[]>; // keyed by filename
+
+function loadHistory(): History {
+  try { return JSON.parse(localStorage.getItem(HIST_KEY) ?? "{}"); } catch { return {}; }
+}
+function saveHistory(h: History) {
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(h)); } catch { /* quota */ }
+}
+function pushEntry(fileName: string, entry: HistEntry) {
+  const h = loadHistory();
+  if (!h[fileName]) h[fileName] = [];
+  h[fileName].push(entry);
+  // keep last 20 runs per file
+  if (h[fileName].length > 20) h[fileName] = h[fileName].slice(-20);
+  saveHistory(h);
+}
+function getHistory(fileName: string): HistEntry[] {
+  return loadHistory()[fileName] ?? [];
+}
+
+function delta(curr: number, prev: number) {
+  const d = curr - prev;
+  if (d === 0) return { label: "= sin cambio", color: "text-slate-400" };
+  if (d < 0) return { label: `▼ ${fmt(-d)} mejor`, color: "text-emerald-600 font-semibold" };
+  return { label: `▲ ${fmt(d)} peor`, color: "text-red-500 font-semibold" };
+}
+
+// ── misc utils ─────────────────────────────────────────────────
+function hex(b: Uint8Array) { return [...b].map(x => x.toString(16).padStart(2, "0")).join("") }
 function save(bytes: Uint8Array, name: string) {
   const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   const url = URL.createObjectURL(new Blob([buf]));
@@ -32,7 +63,9 @@ export default function App() {
   const [tests, setTests] = useState<TestRow[] | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("Listo — NDC20-AB Stable v2.1");
+  const [msg, setMsg] = useState("Listo — NDC23b");
+  const [prevEntry, setPrevEntry] = useState<HistEntry | null>(null);
+  const [fileHistory, setFileHistory] = useState<HistEntry[]>([]);
 
   const addLog = (x: string) => setLog(l => [...l.slice(-200), `${new Date().toLocaleTimeString()} ${x}`]);
 
@@ -49,6 +82,10 @@ export default function App() {
     setFileName(f.name); setOriginal(data); setHash(await sha256(data));
     setSizes({ ndc: null, zlib: null }); setNdcFile(null); setTests(null);
     setMsg("Archivo cargado"); setLog([]);
+    // load history for this file
+    const hist = getHistory(f.name);
+    setFileHistory(hist);
+    setPrevEntry(hist.length > 0 ? hist[hist.length - 1] : null);
   }
 
   async function run() {
@@ -62,6 +99,12 @@ export default function App() {
       ]);
       const restored = await decompressNDC(r.file);
       const ok = restored.length === original.length && restored.every((v, i) => v === original[i]);
+      const entry: HistEntry = { ndcSize: r.file.length, zlibSize: z.length, origSize: original.length, ts: Date.now() };
+      pushEntry(fileName, entry);
+      const hist = getHistory(fileName);
+      setFileHistory(hist);
+      // prev = second-to-last (the one before this run)
+      setPrevEntry(hist.length >= 2 ? hist[hist.length - 2] : null);
       setSizes({ ndc: r.file.length, zlib: z.length });
       setNdcFile(r.file);
       setMsg(ok ? "✅ Round-trip verificado" : "❌ Error en round-trip");
@@ -99,6 +142,11 @@ export default function App() {
     setBusy(false);
   }
 
+  function clearHistory() {
+    const h = loadHistory(); delete h[fileName]; saveHistory(h);
+    setFileHistory([]); setPrevEntry(null);
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8 text-slate-900">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -107,10 +155,10 @@ export default function App() {
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white px-3 py-1 text-sm mb-3">
-              <Binary className="h-4 w-4" /> NDC20-AB Stable v2.1
+              <Binary className="h-4 w-4" /> NDC23b
             </div>
             <h1 className="text-3xl md:text-4xl font-bold">Compresor experimental</h1>
-            <p className="text-slate-600 mt-2">LZ (hash mult. × 8 slots × 4 MB) + Huffman canónico order-0 — vs Deflate/zlib nivel 9</p>
+            <p className="text-slate-600 mt-2">LZ (hash mult. × 12 slots × 4 MB) + Huffman canónico order-0 — vs Deflate/zlib nivel 9</p>
           </div>
           <span className="inline-flex items-center gap-2 text-sm text-slate-600">
             <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {msg}
@@ -148,7 +196,6 @@ export default function App() {
         {/* Stats */}
         {orig > 0 && (sizes.ndc != null || sizes.zlib != null) && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Original */}
             <Card className="rounded-2xl border-slate-200">
               <CardContent className="p-4">
                 <p className="text-xs text-slate-500 mb-1">Original</p>
@@ -156,16 +203,19 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-1">Sin compresión</p>
               </CardContent>
             </Card>
-            {/* NDC-AB */}
             <Card className={`rounded-2xl border-slate-200 ${showdown === "NDC-AB 🏆" ? "ring-2 ring-emerald-400 bg-emerald-50" : ""}`}>
               <CardContent className="p-4">
                 <p className="text-xs text-slate-500 mb-1">NDC-AB (LZ + Huffman)</p>
                 <p className="text-2xl font-bold">{sizes.ndc != null ? fmt(sizes.ndc) : "—"}</p>
                 <p className="text-xs text-slate-400 mt-1">Ahorro {pct(sizes.ndc, orig)}</p>
                 {showdown === "NDC-AB 🏆" && <p className="text-xs font-semibold text-emerald-600 mt-1">🏆 Ganador</p>}
+                {/* vs previous run */}
+                {prevEntry && sizes.ndc != null && (() => {
+                  const d = delta(sizes.ndc, prevEntry.ndcSize);
+                  return <p className={`text-xs mt-1 ${d.color}`}>{d.label} vs corrida anterior</p>;
+                })()}
               </CardContent>
             </Card>
-            {/* zlib */}
             <Card className={`rounded-2xl border-slate-200 ${showdown === "zlib 🏆" ? "ring-2 ring-amber-400 bg-amber-50" : ""}`}>
               <CardContent className="p-4">
                 <p className="text-xs text-slate-500 mb-1">Deflate/zlib (nivel 9)</p>
@@ -207,6 +257,57 @@ export default function App() {
                           <td className={`p-2 text-right ${key==="ndc" ? (diff<0?"text-emerald-600":diff>0?"text-red-500":""):""}`}>
                             {key === "zlib" ? "referencia" : diff < 0 ? `−${fmt(-diff)} mejor` : diff > 0 ? `+${fmt(diff)} peor` : "igual"}
                           </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* History panel */}
+        {fileName && fileHistory.length > 0 && (
+          <Card className="rounded-3xl border-slate-200 bg-white/90">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">
+                  Historial — <span className="font-normal text-slate-500 text-sm">{fileName}</span>
+                  <span className="ml-2 text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">{fileHistory.length} corridas</span>
+                </h2>
+                <Button variant="outline" className="text-xs rounded-xl h-7 px-3" onClick={clearHistory}>
+                  Limpiar
+                </Button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border border-slate-200">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="text-left p-2">#</th>
+                      <th className="text-left p-2">Hora</th>
+                      <th className="text-right p-2">NDC-AB</th>
+                      <th className="text-right p-2">vs anterior</th>
+                      <th className="text-right p-2">zlib</th>
+                      <th className="text-center p-2">Ganador</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fileHistory.map((e, idx) => {
+                      const prev = idx > 0 ? fileHistory[idx - 1] : null;
+                      const d = prev ? delta(e.ndcSize, prev.ndcSize) : null;
+                      const w = pickWinner(e.ndcSize, e.zlibSize);
+                      const isCurrent = idx === fileHistory.length - 1;
+                      return (
+                        <tr key={idx} className={`border-t ${isCurrent ? "bg-blue-50" : "hover:bg-slate-50"}`}>
+                          <td className="p-2 text-slate-400">{idx + 1}{isCurrent ? " ←" : ""}</td>
+                          <td className="p-2 text-slate-500 text-xs">{new Date(e.ts).toLocaleTimeString()}</td>
+                          <td className="p-2 text-right font-mono text-xs">{fmt(e.ndcSize)}</td>
+                          <td className={`p-2 text-right text-xs ${d?.color ?? "text-slate-300"}`}>
+                            {d ? d.label : "—"}
+                          </td>
+                          <td className="p-2 text-right font-mono text-xs text-slate-400">{fmt(e.zlibSize)}</td>
+                          <td className="p-2 text-center text-xs">{w.startsWith("NDC") ? "NDC 🏆" : w.startsWith("zlib") ? "zlib" : "="}</td>
                         </tr>
                       );
                     })}
