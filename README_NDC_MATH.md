@@ -95,7 +95,7 @@ $$
 and selects the smallest valid candidate:
 
 $$
-c^* = \arg\min_{c \in \mathcal{C}} |E_c(x)|
+c^\* = \arg\min_{c \in \mathcal{C}} |E_c(x)|
 $$
 
 subject to exact reconstruction:
@@ -217,7 +217,7 @@ $$
 Each column is compressed independently:
 
 $$
-V^{(k)}_{*,j} = (v_{1,j}, v_{2,j}, \ldots, v_{m,j})
+V^{(k)}_{\*,j} = (v_{1,j}, v_{2,j}, \ldots, v_{m,j})
 $$
 
 This is important because a column often has a simpler distribution than the original text:
