@@ -709,7 +709,7 @@ Recommended options:
 ---
 
 <p align="center">
-  Developed by <b>Hecho con IA</b>
+  Developed by <b>eDev Core SAS</b>
 </p>
 
 ## Short description
