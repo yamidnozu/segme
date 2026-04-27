@@ -10,27 +10,31 @@
   <img src="https://img.shields.io/badge/Status-Experimental-orange?style=for-the-badge" alt="Status">
 </p>
 
-# SEGME: Next-Gen Data Compression (NDC)
+# SEGME: Next-Gen Data Compression
 
-NDC is an experimental lossless compression engine focused on structured logs, SQL dumps, text-like data, and mixed binary workloads.
+SEGME is an experimental lossless compression engine focused on structured logs, SQL dumps, text-like data, and mixed binary workloads.
 
-The project explores a hybrid compression architecture that combines dynamic template mining, columnar variable encoding, LZ-style matching, entropy coding, binary transforms, and safe fallback compression. The goal is not to claim universal superiority over mature codecs, but to investigate where domain-aware reversible transforms can outperform generic compressors such as Deflate.
+The project explores a hybrid compression architecture that combines dynamic template mining, columnar variable encoding, LZ-style matching, entropy coding, binary-local transforms, arithmetic numeric compression, and safe fallback compression.
 
-NDC is currently research-oriented and browser-friendly. It is written in TypeScript and can run directly in modern web environments, including Web Workers.
+The goal is not to claim universal superiority over mature codecs, but to investigate where domain-aware reversible transforms can outperform generic compressors such as Deflate.
 
-## Why NDC exists
+SEGME is currently research-oriented and browser-friendly. It is written in TypeScript and can run directly in modern web environments, including Web Workers.
 
-Most general-purpose compressors operate mostly at the byte level. That works well for arbitrary files, but it misses structure that is obvious in real-world logs and data dumps:
+---
+
+## Why SEGME exists
+
+Most general-purpose compressors operate mostly at the byte level. That works well for arbitrary files, but it can miss structure that is obvious in real-world logs and data dumps:
 
 ```txt
 timestamp level service route status latency trace_id
 timestamp level service route status latency trace_id
 timestamp level service route status latency trace_id
-```
+````
 
-NDC tries to exploit that structure before applying byte-level compression.
+SEGME tries to expose that structure before applying byte-level compression.
 
-Instead of only compressing a stream of bytes, NDC can transform the input into:
+Instead of only compressing a stream of bytes, SEGME can transform the input into:
 
 ```txt
 templates
@@ -39,63 +43,94 @@ columns of variables
 numeric deltas
 dictionary-coded values
 residual raw data
+binary-local transformed blocks
 ```
 
 Then each part is compressed using the most appropriate internal strategy.
 
+---
+
 ## Current status
 
-NDC is experimental.
+SEGME is experimental.
 
 It is suitable for:
 
-- Research into lossless compression
-- Log compression experiments
-- Browser-based compression demos
-- SQL dump compression tests
-- Compression benchmarking
-- Educational exploration of LZ, entropy coding, and structural transforms
+* Research into lossless compression
+* Log compression experiments
+* Browser-based compression demos
+* SQL dump compression tests
+* Compression benchmarking
+* Educational exploration of LZ, entropy coding, and structural transforms
 
 It is not yet intended as a drop-in replacement for production storage systems.
 
+---
+
 ## Main ideas
 
-NDC combines several reversible techniques:
+SEGME combines several reversible techniques:
 
-- Dynamic template mining for structured logs
-- Columnar encoding of extracted variables
-- Numeric delta and delta-of-delta encoding
-- Golomb-Rice encoding for Laplace-like numeric deltas
-- Markov-style template repetition coding
-- LZ matching with hash-mult tables and multiple parsing modes
-- Canonical Huffman coding
-- rANS-style entropy coding for selected streams
-- RLE and fill-stream optimization
-- Binary-local transforms for non-text data
-- DeflateRaw fallback for general-purpose safety
-- Round-trip validation before selecting a compressed candidate
-- Web Worker support for non-blocking browser execution
+* Dynamic template mining for structured logs
+* Columnar encoding of extracted variables
+* Numeric delta and delta-of-delta encoding
+* Golomb-Rice encoding for Laplace-like numeric deltas
+* Markov-style template repetition coding
+* LZ matching with hash-based match discovery
+* Canonical Huffman coding
+* rANS-style entropy coding for selected streams
+* RLE and fill-stream optimization
+* Arithmetic numeric compression
+* Binary-local transforms for non-text data
+* Matrix transpose and byte shuffle transforms
+* DeflateRaw fallback for general-purpose safety
+* Round-trip validation before selecting a compressed candidate
+* Web Worker support for non-blocking browser execution
 
-## Mathematical model
+---
 
-NDC treats compression as a constrained optimization problem over a set of reversible candidate transforms.
+# Mathematical model
+
+SEGME treats compression as a constrained optimization problem over a set of reversible candidate transforms.
 
 Given an input byte sequence:
 
 $$
-x = (x_1, x_2, \ldots, x_n), \qquad x_i \in \{0,\ldots,255\}
+x = (x_1, x_2, \ldots, x_n)
+$$
+
+with each byte satisfying:
+
+$$
+x_i \in {0,1,2,\ldots,255}
 $$
 
 the compressor evaluates a set of reversible candidates:
 
 $$
-\mathcal{C} = \{c_1,c_2,\ldots,c_m\}
+\mathcal{C} = {c_1,c_2,\ldots,c_m}
 $$
 
-and selects the smallest valid candidate:
+Each candidate has an encoder:
 
 $$
-c^\* = \arg\min_{c \in \mathcal{C}} |E_c(x)|
+E_c
+$$
+
+and a decoder:
+
+$$
+D_c
+$$
+
+The compressor selects the smallest valid encoded candidate:
+
+$$
+c^{\ast}
+========
+
+\underset{c \in \mathcal{C}}{\arg\min}
+\ |E_c(x)|
 $$
 
 subject to exact reconstruction:
@@ -104,20 +139,25 @@ $$
 D_c(E_c(x)) = x
 $$
 
-where:
+In this model:
 
-- $E_c$ is the encoder for candidate $c$
-- $D_c$ is its decoder
-- $|E_c(x)|$ is the compressed size in bytes or bits
+* `E_c` means the encoder associated with candidate `c`.
+* `D_c` means the decoder associated with candidate `c`.
+* `|E_c(x)|` means the encoded size of candidate `c`, measured in bytes or bits.
 
 This means every transform is treated as a hypothesis. A transform is only useful if it reduces description length and preserves exact reconstruction.
 
-### Entropy target
+---
 
-For a discrete symbol source $X$, the theoretical lower bound is the Shannon entropy:
+## Entropy target
+
+For a discrete symbol source named `X`, the theoretical lower bound is the Shannon entropy:
 
 $$
-H(X) = -\sum_{s \in \Sigma} p(s)\log_2 p(s)
+H(X)
+====
+
+-\sum_{s \in \Sigma} p(s)\log_2 p(s)
 $$
 
 A practical entropy coder tries to approach:
@@ -126,90 +166,190 @@ $$
 L(X) \approx nH(X)
 $$
 
-where $L(X)$ is the encoded length.
+Here, `L(X)` means the encoded length of the source.
 
-NDC does not assume that the input is independent and identically distributed. Logs and SQL dumps are highly structured, so NDC first tries to expose lower-entropy streams before applying entropy coding.
+SEGME does not assume that the input is independent and identically distributed. Logs, SQL dumps, and structured machine-generated files often contain repeated schemas, repeated fields, monotonic values, and predictable local patterns.
 
-### Compression ratio
+SEGME first tries to expose lower-entropy streams before applying entropy coding.
 
-The compression ratio is reported as:
+---
+
+## Compression ratio
+
+The compression ratio is:
 
 $$
-R = \frac{|C(x)|}{|x|}
+R
+=
+
+\frac{|C(x)|}{|x|}
 $$
 
-and the space saving is:
+The space saving is:
 
 $$
 S = 1 - R
 $$
 
-For example, if a file of $2.97$ MB is compressed to $306.11$ KB:
+For example, if a file of `2.97 MB` is compressed to `306.11 KB`:
 
 $$
-R \approx \frac{306.11}{2.97 \cdot 1024} \approx 0.1007
+R
+\approx
+\frac{306.11}{2.97 \cdot 1024}
+\approx
+0.1007
 $$
 
 $$
-S \approx 1 - 0.1007 = 0.8993
+S
+\approx
+1 - 0.1007
+==========
+
+0.8993
 $$
 
-which corresponds to approximately $89.93\%$ reduction.
+This corresponds to approximately:
 
-### Dynamic template mining
+$$
+89.93%
+$$
 
-NDC models structured text as repeated templates plus variables.
+space reduction.
+
+---
+
+# Adaptive candidate selection
+
+SEGME does not force one compression path. It compares multiple reversible candidates and chooses the smallest valid one.
+
+For a block named `B`, the selected representation is:
+
+$$
+C(B)
+====
+
+\min
+\left[
+\begin{array}{l}
+\mathrm{RAW}(B),\
+\mathrm{UINT}(B),\
+\mathrm{RLE}(B),\
+\mathrm{REP}(B),\
+\mathrm{POW}*{\pm}(B),\
+\mathrm{NP}*{\pm}(B),\
+\mathrm{FACT}(B),\
+\mathrm{JOIN10}(B),\
+\mathrm{SEQ}(B),\
+\mathrm{DEFLATE}(B)
+\end{array}
+\right]
+$$
+
+The decision rule is:
+
+$$
+\mathrm{cost}(\mathrm{candidate})
+<
+\mathrm{cost}(\mathrm{RAW}(B))
+$$
+
+If no candidate improves the representation, the block is stored as raw data or as a compact binary integer when appropriate.
+
+---
+
+## Exact reconstruction
+
+Every selected candidate must satisfy:
+
+$$
+D(E(x)) = x
+$$
+
+SEGME also validates candidates with SHA-256:
+
+$$
+\mathrm{SHA256}(D(E(x)))
+========================
+
+\mathrm{SHA256}(x)
+$$
+
+A candidate is invalid if it is smaller but cannot reconstruct the original input exactly.
+
+---
+
+# Structural transforms
+
+## Dynamic template mining
+
+SEGME models structured text as repeated templates plus variables.
 
 A line can be represented as:
 
 $$
-\ell_i = \tau_k(v_{i,1}, v_{i,2}, \ldots, v_{i,r_k})
+\ell_i
+======
+
+\tau_k(v_{i,1}, v_{i,2}, \ldots, v_{i,r_k})
 $$
 
-where:
+In this expression:
 
-- $\ell_i$ is a line
-- $\tau_k$ is a discovered template
-- $v_{i,j}$ is the $j$-th extracted variable
-- $r_k$ is the number of variables in template $k$
+* `ell_i` means the current line.
+* `tau_k` means the discovered template.
+* `v_i,j` means the extracted variable at position `j`.
+* `r_k` means the number of variables in template `k`.
 
 A template is useful when its description length is smaller than storing all matching lines raw.
 
 A simplified Minimum Description Length score is:
 
 $$
-G(\tau) =
-\sum_{\ell_i \in M_\tau} |\ell_i|
--
+G(\tau)
+=======
+
+## \sum_{\ell_i \in M_\tau} |\ell_i|
+
 \left(
-|\tau| + \sum_{\ell_i \in M_\tau}\sum_j |v_{i,j}| + \Omega_\tau
+|\tau|
++
+\sum_{\ell_i \in M_\tau}
+\sum_j |v_{i,j}|
++
+\Omega_\tau
 \right)
 $$
 
-where:
+Here:
 
-- $M_\tau$ is the set of lines matching template $\tau$
-- $|\tau|$ is the template metadata size
-- $\Omega_\tau$ is overhead for IDs, counters, and stream metadata
+* `M_tau` is the set of lines matching template `tau`.
+* `|tau|` is the template metadata size.
+* `Omega_tau` is overhead for IDs, counters, and stream metadata.
 
-NDC keeps a template only when:
+SEGME keeps a template only when:
 
 $$
 G(\tau) > 0
 $$
 
-This is why NDC does not rely on hardcoded tokens. It discovers templates dynamically from the input.
+This is why SEGME does not rely on hardcoded tokens. It discovers templates dynamically from the input.
 
-### Columnar variable model
+---
+
+## Columnar variable model
 
 Once templates are selected, the variables become a matrix:
 
 $$
-V^{(k)} =
+V^{(k)}
+=======
+
 \begin{bmatrix}
-v_{1,1} & v_{1,2} & \cdots & v_{1,r_k} \\
-v_{2,1} & v_{2,2} & \cdots & v_{2,r_k} \\
-\vdots  & \vdots  & \ddots & \vdots \\
+v_{1,1} & v_{1,2} & \cdots & v_{1,r_k} \
+v_{2,1} & v_{2,2} & \cdots & v_{2,r_k} \
+\vdots  & \vdots  & \ddots & \vdots \
 v_{m,1} & v_{m,2} & \cdots & v_{m,r_k}
 \end{bmatrix}
 $$
@@ -217,26 +357,31 @@ $$
 Each column is compressed independently:
 
 $$
-V^{(k)}_{\*,j} = (v_{1,j}, v_{2,j}, \ldots, v_{m,j})
+V^{(k)}_{\ast,j}
+================
+
+(v_{1,j}, v_{2,j}, \ldots, v_{m,j})
 $$
 
-This is important because a column often has a simpler distribution than the original text:
+This matters because a column often has a simpler distribution than the original text:
 
-- status codes repeat
-- timestamps grow slowly
-- latencies have small deltas
-- IDs may be monotonic
-- routes and names become dictionary-friendly
+* status codes repeat
+* timestamps grow slowly
+* latencies have small deltas
+* IDs may be monotonic
+* routes and names become dictionary-friendly
 
-### Numeric delta model
+---
 
-For numeric columns:
+## Numeric delta model
+
+For a numeric column:
 
 $$
 a = (a_1,a_2,\ldots,a_n)
 $$
 
-NDC can encode first-order deltas:
+SEGME can encode first-order deltas:
 
 $$
 \Delta_i = a_i - a_{i-1}
@@ -245,19 +390,23 @@ $$
 and second-order deltas:
 
 $$
-\Delta^2_i = \Delta_i - \Delta_{i-1}
+\Delta_i^2 = \Delta_i - \Delta_{i-1}
 $$
 
-If the sequence is almost linear, $\Delta^2_i$ tends to be small, which makes it cheaper to encode.
+If the sequence is almost linear, the second-order delta tends to be small, which makes it cheaper to encode.
 
-### ZigZag mapping
+---
+
+## ZigZag mapping
 
 Signed deltas are mapped to unsigned integers using ZigZag encoding:
 
 $$
-Z(d)=
+Z(d)
+====
+
 \begin{cases}
-2d, & d \ge 0 \\
+2d, & d \ge 0 \
 -2d - 1, & d < 0
 \end{cases}
 $$
@@ -272,18 +421,28 @@ This maps small negative and positive numbers to small unsigned values:
  2 -> 4
 ```
 
-### Golomb-Rice coding
+---
+
+## Golomb-Rice coding
 
 When deltas follow a Laplace-like distribution, many values are near zero. Golomb-Rice coding is efficient for this case.
 
-For an unsigned value $z$ and parameter $k$:
+For an unsigned value named `z` and parameter `k`:
 
 $$
-q = \left\lfloor \frac{z}{2^k} \right\rfloor
+q
+=
+
+\left\lfloor
+\frac{z}{2^k}
+\right\rfloor
 $$
 
 $$
-r = z \bmod 2^k
+r
+=
+
+z \bmod 2^k
 $$
 
 The encoded length is approximately:
@@ -292,19 +451,35 @@ $$
 L_k(z) = q + 1 + k
 $$
 
-NDC estimates $k$ from the average absolute delta:
+SEGME estimates `k` from the average absolute ZigZag delta:
 
 $$
-k \approx \max\left(0, \left\lfloor \log_2(\mathbb{E}[|Z(\Delta)|]) \right\rfloor\right)
+k
+\approx
+\max
+\left(
+0,
+\left\lfloor
+\log_2
+\left(
+\mathbb{E}
+\left[
+|Z(\Delta)|
+\right]
+\right)
+\right\rfloor
+\right)
 $$
 
 This is useful for columns such as timestamps, counters, latencies, ports, row IDs, and status-like numeric values.
 
-### Markov-style template repetition
+---
 
-Template IDs are not independent. In logs, if template $t_i$ appears, the next line often uses the same template.
+## Markov-style template repetition
 
-NDC uses a simple Markov-style repetition model:
+Template IDs are not independent. In logs, if one template appears, the next line often uses the same template.
+
+SEGME uses a simple Markov-style repetition model:
 
 $$
 P(t_i = t_{i-1})
@@ -315,18 +490,447 @@ When the current template equals the previous one, the encoder can emit a shorte
 A simple coding idea is:
 
 $$
-t_i =
+t_i
+===
+
 \begin{cases}
-\text{repeat}, & t_i = t_{i-1} \\
-\text{new id } t_i, & t_i \ne t_{i-1}
+\mathrm{repeat}, & t_i = t_{i-1} \
+\mathrm{new_id}(t_i), & t_i \ne t_{i-1}
 \end{cases}
 $$
 
 This reduces overhead in long runs of similar log lines or SQL records.
 
-### LZ-style matching
+---
 
-For byte-level compression, NDC uses LZ-style references.
+# Arithmetic numeric compression
+
+SEGME can also represent numeric blocks using exact arithmetic descriptions.
+
+## Power form
+
+A numeric block named `B` can be represented as:
+
+$$
+B = y^n + r
+$$
+
+or:
+
+$$
+B = y^n - r
+$$
+
+where:
+
+$$
+r = |B - y^n|
+$$
+
+This is useful when a number is exactly a power or close to a power.
+
+Examples:
+
+```txt
+1000000000000 -> POW(10,12)
+999999999999  -> POW-(10,12,1)
+1000000123    -> POW+(10,9,123)
+```
+
+---
+
+## Nested exponent form
+
+Sometimes the exponent itself can be compressed:
+
+$$
+n = c^l
+$$
+
+Then:
+
+$$
+B = y^{c^l} \pm r
+$$
+
+Example:
+
+```txt
+10^65536 = 10^(2^16)
+```
+
+Representation:
+
+```txt
+NP(10,2,16)
+```
+
+This is only selected if it is shorter than the normal power form.
+
+---
+
+## Factor form
+
+If a number has repeated small prime factors:
+
+$$
+B = p^s \cdot Q
+$$
+
+SEGME can represent it as:
+
+```txt
+FACT(p,s,Q)
+```
+
+Example:
+
+```txt
+810000 = 2^4 · 3^4 · 5^4 = 30^4
+```
+
+The final selected representation would likely be:
+
+```txt
+POW(30,4)
+```
+
+because it is shorter than storing every factor separately.
+
+---
+
+## Decimal join form
+
+Decimal partitioning represents a block as:
+
+$$
+B = A \cdot 10^k + D
+$$
+
+where `D` has `k` decimal digits.
+
+Example:
+
+```txt
+999999999999123123123123
+```
+
+can be split as:
+
+```txt
+[999999999999][123123123123]
+```
+
+so:
+
+$$
+B
+=
+
+999999999999 \cdot 10^{12}
++
+123123123123
+$$
+
+Then:
+
+```txt
+999999999999 = POW-(10,12,1)
+123123123123 = REP(123,4)
+```
+
+Result:
+
+```txt
+JOIN10(POW-(10,12,1),12,REP(123,4))
+```
+
+---
+
+## Sequence of powers
+
+A run of powers can be stored as a sequence:
+
+$$
+\mathrm{SEQ}(y,a,b)
+===================
+
+\sum_{k=a}^{b} y^k
+$$
+
+For example:
+
+$$
+2^{137}
++
+2^{138}
++
+2^{139}
++
+2^{140}
+$$
+
+can be stored as:
+
+```txt
+SEQ(2,137,140)
+```
+
+It can also be rewritten as:
+
+$$
+2^{137}(1 + 2 + 4 + 8)
+======================
+
+15 \cdot 2^{137}
+$$
+
+So another possible representation is:
+
+```txt
+FACT(2,137,15)
+```
+
+SEGME selects whichever representation is shorter.
+
+---
+
+## Binary integer fallback
+
+Some numbers do not have useful mathematical structure.
+
+Example:
+
+```txt
+9973
+```
+
+It is close to:
+
+```txt
+100^2 - 27
+```
+
+but this expression is longer than the number itself.
+
+In that case, SEGME can store it as a compact binary integer:
+
+```txt
+UINT16(9973)
+```
+
+because:
+
+$$
+9973 < 2^{16}
+$$
+
+The rule is simple:
+
+```txt
+If no mathematical structure helps, store the value as a compact integer or raw data.
+```
+
+---
+
+# Binary-local transforms
+
+SEGME can apply reversible local transforms before compression. These transforms are useful because they expose patterns that are hidden in the original byte order.
+
+The general sandwich structure is:
+
+```txt
+original block
+  -> reversible transform
+  -> compression
+  -> stored payload
+```
+
+During decompression:
+
+```txt
+stored payload
+  -> decompression
+  -> inverse transform
+  -> original block
+```
+
+Mathematically:
+
+$$
+B = T^{-1}(T(B))
+$$
+
+and the selected candidate must satisfy:
+
+$$
+D_T(E_T(B)) = B
+$$
+
+---
+
+## Matrix transpose / byte shuffle
+
+When records have fixed-width structure, bytes can be rearranged by position.
+
+Example input:
+
+```txt
+A7 F3 00 A8 F4 00 A9 F5 00 AA F6 00
+```
+
+As a matrix of width `3`:
+
+```txt
+A7 F3 00
+A8 F4 00
+A9 F5 00
+AA F6 00
+```
+
+Reordered by columns:
+
+```txt
+A7 A8 A9 AA F3 F4 F5 F6 00 00 00 00
+```
+
+The zeros become a long run, which is easier to compress.
+
+Representation:
+
+```txt
+MATRIX(width=3)
+```
+
+For fixed-width numeric records, this is equivalent to:
+
+```txt
+BYTE_SHUFFLE(width=4)
+```
+
+---
+
+## Delta transform
+
+For smoothly changing byte sequences:
+
+```txt
+100, 101, 102, 103, 104
+```
+
+the delta transform produces:
+
+```txt
+100, 1, 1, 1, 1
+```
+
+Definition:
+
+$$
+\mathrm{DELTA}(B)_0 = B_0
+$$
+
+$$
+\mathrm{DELTA}(B)_i
+===================
+
+(B_i - B_{i-1}) \bmod 256
+$$
+
+Inverse:
+
+$$
+B_0 = \mathrm{DELTA}(B)_0
+$$
+
+$$
+B_i
+===
+
+\left(
+B_{i-1}
++
+\mathrm{DELTA}(B)_i
+\right)
+\bmod 256
+$$
+
+---
+
+## XOR-delta transform
+
+For byte sequences with small bitwise changes:
+
+$$
+\mathrm{XORDELTA}(B)_0 = B_0
+$$
+
+$$
+\mathrm{XORDELTA}(B)_i
+======================
+
+B_i \oplus B_{i-1}
+$$
+
+Inverse:
+
+$$
+B_0 = \mathrm{XORDELTA}(B)_0
+$$
+
+$$
+B_i
+===
+
+\mathrm{XORDELTA}(B)*i
+\oplus
+B*{i-1}
+$$
+
+Example:
+
+```txt
+F0 F1 F0 F1 F0
+```
+
+becomes:
+
+```txt
+F0 01 01 01 01
+```
+
+---
+
+## Bitplane transform
+
+The bitplane transform separates bits by position.
+
+For bytes:
+
+```txt
+00000001
+00000011
+00000111
+```
+
+the bitplanes are conceptually:
+
+```txt
+bit0: 1 1 1
+bit1: 0 1 1
+bit2: 0 0 1
+bit3..bit7: 0 0 0
+```
+
+This can expose long zero runs in high bitplanes.
+
+---
+
+# Byte-level compression
+
+## LZ-style matching
+
+For byte-level compression, SEGME uses LZ-style references.
 
 A repeated substring can be encoded as a match:
 
@@ -336,8 +940,8 @@ $$
 
 where:
 
-- $d$ is the backward distance
-- $\ell$ is the match length
+* `d` is the backward distance.
+* `ell` is the match length.
 
 Instead of storing:
 
@@ -354,66 +958,62 @@ $$
 The match is useful when:
 
 $$
-\operatorname{cost}(d,\ell) < \operatorname{cost}(x_i,\ldots,x_{i+\ell-1})
+\mathrm{cost}(d,\ell)
+<
+\mathrm{cost}(x_i,\ldots,x_{i+\ell-1})
 $$
 
-NDC uses hash-based matching and multiple parsing modes to decide which matches are worth emitting.
+SEGME uses hash-based matching and multiple parsing modes to decide which matches are worth emitting.
 
-### Canonical Huffman coding
+---
 
-For a symbol $s$ with probability $p(s)$, an ideal code length is:
+## Canonical Huffman coding
+
+For a symbol named `s` with probability `p(s)`, an ideal code length is:
 
 $$
-\ell(s) \approx -\log_2 p(s)
+\ell(s)
+\approx
+-\log_2 p(s)
 $$
 
 Huffman coding assigns integer code lengths that minimize expected length under prefix-code constraints:
 
 $$
-\mathbb{E}[L] = \sum_{s \in \Sigma} p(s)\ell(s)
+\mathbb{E}[L]
+=============
+
+\sum_{s \in \Sigma}
+p(s)\ell(s)
 $$
 
-NDC uses canonical Huffman codes for compact and deterministic representation.
+SEGME uses canonical Huffman codes for compact and deterministic representation.
 
-### rANS entropy coding
+---
 
-NDC also uses rANS-style entropy coding for selected streams.
+## rANS entropy coding
 
-At a high level, ANS maintains an integer state $x$ and encodes symbols by transforming the state according to a probability model:
+SEGME also uses rANS-style entropy coding for selected streams.
+
+At a high level, ANS maintains an integer state named `q` and encodes symbols by transforming the state according to a probability model:
 
 $$
-x' = C(s,x)
+q' = C(s,q)
 $$
 
 and decodes with the inverse operation:
 
 $$
-(s,x) = C^{-1}(x')
+(s,q) = C^{-1}(q')
 $$
 
 The practical benefit is that rANS can approach arithmetic-coding efficiency while remaining fast and table-driven.
 
-### Candidate validation
+---
 
-NDC never trusts a candidate only because it is smaller.
+# Architecture
 
-Each candidate must satisfy:
-
-$$
-\operatorname{SHA256}(D(E(x))) = \operatorname{SHA256}(x)
-$$
-
-and:
-
-$$
-D(E(x)) = x
-$$
-
-Only then can it be selected as the final output.
-
-## Architecture
-
-NDC uses an adaptive candidate pipeline.
+SEGME uses an adaptive candidate pipeline.
 
 For each input, the compressor evaluates several reversible paths and selects the smallest valid output.
 
@@ -423,6 +1023,7 @@ input
   |-- raw byte-oriented core
   |-- log/template transform
   |-- columnar variable transform
+  |-- arithmetic numeric transform
   |-- binary-local transform
   |-- DeflateRaw fallback
   |
@@ -445,25 +1046,27 @@ per-column encoding
 LZ + entropy coding
 ```
 
-This allows NDC to compress repeated log structures more efficiently than treating the file as plain text.
+---
 
-## Example results
+# Example results
 
 The following results are from local benchmark runs. They should be reproduced on your own machine before drawing conclusions.
 
-| File | Original | NDC | Deflate level 9 | Result |
-|---|---:|---:|---:|---|
-| `test_logs.txt` | 2.97 MB | 306.11 KB | 443.16 KB | NDC smaller |
-| `asistapp_prod_backup_20260425_061325.sql` | 16.73 MB | 4.08 MB | 5.35 MB | NDC smaller |
-| `Codex Installer.exe` | 1.12 MB | 446.74 KB | 494.50 KB | NDC smaller |
-| `WinDirStat-x64.msi` | 2.37 MB | 1.58 MB | 1.58 MB | roughly tied |
-| TypeScript source file | 71.27 KB | 16.74 KB | 16.75 KB | roughly tied |
+| File                                       | Original | SEGME/NDC | Deflate level 9 | Result        |
+| ------------------------------------------ | -------: | --------: | --------------: | ------------- |
+| `test_logs.txt`                            |  2.97 MB | 306.11 KB |       443.16 KB | SEGME smaller |
+| `asistapp_prod_backup_20260425_061325.sql` | 16.73 MB |   4.08 MB |         5.35 MB | SEGME smaller |
+| `Codex Installer.exe`                      |  1.12 MB | 446.74 KB |       494.50 KB | SEGME smaller |
+| `WinDirStat-x64.msi`                       |  2.37 MB |   1.58 MB |         1.58 MB | roughly tied  |
+| TypeScript source file                     | 71.27 KB |  16.74 KB |        16.75 KB | roughly tied  |
 
-These results show the current strength of NDC: structured logs and text-like data with repeated schema. For already-compressed binaries or installer formats, NDC falls back to general compression behavior.
+These results show the current strength of SEGME: structured logs and text-like data with repeated schema. For already-compressed binaries or installer formats, SEGME falls back to general compression behavior.
 
-## Compression model
+---
 
-At a high level, NDC uses this flow:
+# Compression model
+
+At a high level, SEGME uses this flow:
 
 ```txt
 1. Analyze the input
@@ -475,11 +1078,13 @@ At a high level, NDC uses this flow:
 7. Select the smallest valid result
 ```
 
-This validation step is important. NDC is designed to avoid returning a compressed file that cannot reconstruct the original data.
+This validation step is important. SEGME is designed to avoid returning a compressed file that cannot reconstruct the original data.
 
-## Web Worker support
+---
 
-NDC includes a Web Worker interface for running compression without blocking the UI thread.
+# Web Worker support
+
+SEGME includes a Web Worker interface for running compression without blocking the UI thread.
 
 Example worker entry:
 
@@ -491,28 +1096,62 @@ self.onmessage = async event => {
 
   if (msg.op === 'compress') {
     const result = await compressNDC(msg.data);
-    postMessage({ id: msg.id, type: 'result', file: result.file, hash: result.hash }, [
-      result.file.buffer,
-      result.hash.buffer,
-    ]);
+
+    postMessage(
+      {
+        id: msg.id,
+        type: 'result',
+        file: result.file,
+        hash: result.hash,
+      },
+      [
+        result.file.buffer,
+        result.hash.buffer,
+      ]
+    );
   }
 
   if (msg.op === 'decompress') {
     const data = await decompressNDC(msg.data);
-    postMessage({ id: msg.id, type: 'result', data }, [data.buffer]);
+
+    postMessage(
+      {
+        id: msg.id,
+        type: 'result',
+        data,
+      },
+      [
+        data.buffer,
+      ]
+    );
   }
 
   if (msg.op === 'compressBlob') {
-    const result = await compressNDCBlobChunked(msg.blob, undefined, msg.chunkSize);
-    postMessage({ id: msg.id, type: 'result', file: result.file, hash: result.hash }, [
-      result.file.buffer,
-      result.hash.buffer,
-    ]);
+    const result = await compressNDCBlobChunked(
+      msg.blob,
+      undefined,
+      msg.chunkSize
+    );
+
+    postMessage(
+      {
+        id: msg.id,
+        type: 'result',
+        file: result.file,
+        hash: result.hash,
+      },
+      [
+        result.file.buffer,
+        result.hash.buffer,
+      ]
+    );
   }
 };
 ```
 
-## Basic usage
+---
+
+# Basic usage
 
 ```ts
 import { compressNDC, decompressNDC } from './ndc_core';
@@ -526,22 +1165,30 @@ console.log(compressed.file.length);
 console.log(restored);
 ```
 
-## Blob/chunked usage
+---
+
+# Blob/chunked usage
 
 For larger files in the browser:
 
 ```ts
 import { compressNDCBlobChunked } from './ndc_core';
 
-const result = await compressNDCBlobChunked(file, message => {
-  console.log(message);
-}, 16 * 1024 * 1024);
+const result = await compressNDCBlobChunked(
+  file,
+  message => {
+    console.log(message);
+  },
+  16 * 1024 * 1024
+);
 
 console.log(result.file);
 console.log(result.hash);
 ```
 
-## Benchmarking
+---
+
+# Benchmarking
 
 To compare against Deflate:
 
@@ -560,121 +1207,138 @@ console.table({
 
 For meaningful results, benchmark across multiple categories:
 
-- structured logs
-- JSON logs
-- SQL dumps
-- TypeScript or JavaScript source
-- CSV files
-- binary installers
-- already-compressed archives
-- random/high-entropy data
+* structured logs
+* JSON logs
+* SQL dumps
+* TypeScript or JavaScript source
+* CSV files
+* binary installers
+* already-compressed archives
+* random or high-entropy data
 
-## Strengths
+---
 
-NDC performs best when the input has structure that can be discovered dynamically:
+# Strengths
 
-- repeated log templates
-- repeated SQL tuple shapes
-- stable JSON keys
-- repeated routes or service names
-- numeric columns with small deltas
-- status codes, counters, latencies, timestamps
-- semi-structured text with recurring fields
+SEGME performs best when the input has structure that can be discovered dynamically:
 
-## Limitations
+* repeated log templates
+* repeated SQL tuple shapes
+* stable JSON keys
+* repeated routes or service names
+* numeric columns with small deltas
+* status codes, counters, latencies, timestamps
+* semi-structured text with recurring fields
+* binary records with fixed-width structure
 
-NDC is not expected to outperform mature compressors on every file.
+---
+
+# Limitations
+
+SEGME is not expected to outperform mature compressors on every file.
 
 It may not provide large gains for:
 
-- encrypted data
-- random data
-- already-compressed archives
-- media files
-- some installers
-- formats that contain compressed internal streams
+* encrypted data
+* random data
+* already-compressed archives
+* media files
+* some installers
+* formats that contain compressed internal streams
 
-In these cases, NDC relies on fallback strategies to avoid large regressions.
+In these cases, SEGME relies on fallback strategies to avoid large regressions.
 
-## Design principles
+---
 
-NDC follows these principles:
+# Design principles
 
-1. Lossless only  
+SEGME follows these principles:
+
+1. **Lossless only**
    The decompressed output must match the original input exactly.
 
-2. Dynamic discovery  
+2. **Dynamic discovery**
    No hardcoded log tokens or fixed dictionaries are required.
 
-3. Adaptive selection  
+3. **Adaptive selection**
    Transforms are candidates, not assumptions.
 
-4. Round-trip validation  
+4. **Round-trip validation**
    A candidate must successfully decompress before being selected.
 
-5. Browser compatibility  
+5. **Browser compatibility**
    The implementation targets modern TypeScript and Web APIs.
 
-6. Research transparency  
+6. **Research transparency**
    Compression ratios should be reproducible and benchmarked honestly.
 
-## Roadmap
+---
+
+# Roadmap
 
 Planned research directions:
 
-- Context Tree Weighting for residual literal streams
-- Improved Markov coding for template sequences
-- Better column dependency modeling
-- More efficient Golomb-Rice modeling for numeric deltas
-- Optional trained dictionaries for repeated operational logs
-- Faster worker-based compression for large files
-- Streaming decompression
-- Corpus-based benchmark suite
-- CLI runner for reproducible compression tests
-- WASM acceleration for entropy coding
+* Context Tree Weighting for residual literal streams
+* Improved Markov coding for template sequences
+* Better column dependency modeling
+* More efficient Golomb-Rice modeling for numeric deltas
+* Optional trained dictionaries for repeated operational logs
+* Faster worker-based compression for large files
+* Streaming decompression
+* Corpus-based benchmark suite
+* CLI runner for reproducible compression tests
+* WASM acceleration for entropy coding
+* More binary-local transforms for fixed-record files
+* More compact metadata packing for adaptive block selection
 
-## Repository goals
+---
+
+# Repository goals
 
 This project is intended to become a serious open-source compression research playground.
 
 The target audience includes:
 
-- compression researchers
-- observability engineers
-- log platform builders
-- browser tooling developers
-- database backup tooling authors
-- systems programmers
-- students studying compression algorithms
+* compression researchers
+* observability engineers
+* log platform builders
+* browser tooling developers
+* database backup tooling authors
+* systems programmers
+* students studying compression algorithms
 
 The long-term goal is to explore whether domain-aware, dynamically discovered structure can make lossless compression more effective for modern machine-generated data.
 
-## Contributing
+---
+
+# Contributing
 
 Contributions are welcome.
 
 Useful contributions include:
 
-- benchmark results on real datasets
-- new reversible transforms
-- decompression safety tests
-- performance profiling
-- worker and streaming improvements
-- documentation
-- corpus design
-- comparisons against gzip, zstd, brotli, lz4, xz, and bzip2
+* benchmark results on real datasets
+* new reversible transforms
+* decompression safety tests
+* performance profiling
+* worker and streaming improvements
+* documentation
+* corpus design
+* comparisons against gzip, zstd, brotli, lz4, xz, and bzip2
 
 Please include:
 
-- input file type
-- original size
-- NDC compressed size
-- baseline compressor and level
-- compression time
-- decompression time
-- whether round-trip verification passed
+* input file type
+* original size
+* SEGME/NDC compressed size
+* baseline compressor and level
+* compression time
+* decompression time
+* whether round-trip verification passed
 
-## Safety and correctness
+---
+
+# Safety and correctness
 
 Every compressed candidate should be considered invalid unless it passes round-trip verification.
 
@@ -690,21 +1354,26 @@ $$
 D(E(x)) = x
 $$
 
-NDC uses SHA-256 verification to protect against silent corruption:
+SEGME uses SHA-256 verification to protect against silent corruption:
 
 $$
-\operatorname{SHA256}(D(E(x))) = \operatorname{SHA256}(x)
+\mathrm{SHA256}(D(E(x)))
+========================
+
+\mathrm{SHA256}(x)
 $$
 
-## License
+---
+
+# License
 
 Choose a license before publishing.
 
 Recommended options:
 
-- MIT for maximum adoption
-- Apache-2.0 for patent protection
-- MPL-2.0 if you want modifications to core files to remain open
+* MIT for maximum adoption
+* Apache-2.0 for patent protection
+* MPL-2.0 if you want modifications to core files to remain open
 
 ---
 
@@ -714,4 +1383,4 @@ Recommended options:
 
 ## Short description
 
-Dynamic lossless compression engine for structured logs, SQL dumps, and mixed data, using template mining, columnar transforms, LZ matching, entropy coding, and validated adaptive fallback.
+Dynamic lossless compression engine for structured logs, SQL dumps, and mixed data, using template mining, columnar transforms, arithmetic numeric compression, binary-local transforms, LZ matching, entropy coding, and validated adaptive fallback.
